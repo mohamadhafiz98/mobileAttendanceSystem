@@ -1,10 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View,
-  Text,
   FlatList,
+  Pressable,
   StyleSheet,
+  Text,
+  View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAttendance } from '../context/AttendanceContext';
@@ -26,8 +28,23 @@ type DailySession = {
 
 export default function StatisticsScreen() {
   const { records } = useAttendance();
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, -1 = last week, etc.
 
-  const weekDates = useMemo(() => getWeekDates(new Date()), []);
+  const referenceDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + weekOffset * 7);
+    return d;
+  }, [weekOffset]);
+
+  const weekDates = useMemo(() => getWeekDates(referenceDate), [referenceDate]);
+
+  const weekLabel = useMemo(() => {
+    if (weekOffset === 0) return 'This Week';
+    if (weekOffset === -1) return 'Last Week';
+    const first = weekDates[0];
+    const last = weekDates[6];
+    return `${formatLocalDate(first)} – ${formatLocalDate(last)}`;
+  }, [weekOffset, weekDates]);
 
   const sessions = useMemo<DailySession[]>(() => {
     return weekDates.map((localDate) => {
@@ -98,7 +115,19 @@ export default function StatisticsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Statistics</Text>
-        <Text style={styles.subtitle}>This Week</Text>
+        <View style={styles.weekNav}>
+          <Pressable style={styles.navButton} onPress={() => setWeekOffset((o) => o - 1)}>
+            <Ionicons name="chevron-back" size={20} color="#111111" />
+          </Pressable>
+          <Text style={styles.subtitle}>{weekLabel}</Text>
+          <Pressable
+            style={[styles.navButton, weekOffset === 0 && styles.navButtonDisabled]}
+            onPress={() => setWeekOffset((o) => o + 1)}
+            disabled={weekOffset === 0}
+          >
+            <Ionicons name="chevron-forward" size={20} color={weekOffset === 0 ? '#CCCCCC' : '#111111'} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.summaryRow}>
@@ -142,10 +171,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111111',
   },
+  weekNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 4,
+  },
+  navButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  navButtonDisabled: {
+    opacity: 0.4,
+  },
   subtitle: {
     fontSize: 14,
     color: '#666666',
-    marginTop: 2,
+    flex: 1,
+    textAlign: 'center',
   },
   summaryRow: {
     flexDirection: 'row',

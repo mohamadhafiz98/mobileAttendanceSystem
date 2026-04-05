@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 import MapView, { Marker } from 'react-native-maps';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,6 +13,7 @@ export const HistoryScreen = () => {
   const { records } = useAttendance();
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [selectedImageUri, setSelectedImageUri] = useState<string>('');
+  const [imageLoading, setImageLoading] = useState(false);
 
   const exportToCSV = async () => {
     if (records.length === 0) {
@@ -21,37 +22,40 @@ export const HistoryScreen = () => {
     }
 
     try {
-      // Create CSV header
       const headers = ['Type', 'Date', 'Time', 'Latitude', 'Longitude', 'Accuracy'];
-      
-      // Create CSV rows
       const rows = records.map(record => [
         record.type === 'CLOCK_IN' ? 'Clock In' : 'Clock Out',
         formatDateFromISO(record.timestampISO),
         formatTimeFromISO(record.timestampISO),
         record.latitude.toString(),
         record.longitude.toString(),
-        record.locationAccuracyMeters !== null ? record.locationAccuracyMeters.toString() : ''
+        record.locationAccuracyMeters !== null ? record.locationAccuracyMeters.toString() : '',
       ]);
-
-      // Combine headers and rows
       const csvContent = [headers, ...rows]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
 
-      // Use cache directory for temporary file before sharing
       const fileName = `attendance_records_${new Date().toISOString().split('T')[0]}.csv`;
-      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-      
-      await FileSystem.writeAsStringAsync(filePath, csvContent, {
+
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!permissions.granted) return;
+
+      const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        permissions.directoryUri,
+        fileName,
+        'text/csv'
+      );
+      await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, csvContent, {
         encoding: FileSystem.EncodingType.UTF8,
       });
 
-      // Notify the user where the CSV was created.
-      Alert.alert('Export Success', `CSV file created at: ${filePath}`);
+      Alert.alert('Exported', `Saved as ${fileName}`);
     } catch (error) {
       console.error('Export failed:', error);
-      Alert.alert('Export Failed', 'An error occurred while exporting the attendance records.');
+      const message = error instanceof Error && error.message.includes('writable')
+        ? "That folder isn't writable. Please navigate to a real folder (e.g. Internal Storage > Download) instead of using the Downloads shortcut."
+        : 'An error occurred while exporting the attendance records.';
+      Alert.alert('Export Failed', message);
     }
   };
 
@@ -67,23 +71,33 @@ export const HistoryScreen = () => {
       }
     }
 
+    setImageLoading(true);
     setSelectedRecord(record);
     setSelectedImageUri(resolvedUri);
   };
 
-  const renderItem = ({ item }: { item: AttendanceRecord }) => (
-    <Pressable style={styles.row} onPress={() => void openRecord(item)}>
-      <Image source={{ uri: item.photoUri }} style={styles.thumb} />
+  const renderItem = ({ item }: { item: AttendanceRecord }) => {
+    const isClockIn = item.type === 'CLOCK_IN';
+    return (
+      <Pressable style={styles.row} onPress={() => void openRecord(item)}>
+        <Image source={{ uri: item.photoUri }} style={styles.thumb} />
 
-      <View style={styles.rowContent}>
-        <Text style={styles.rowTitle}>{item.type === 'CLOCK_IN' ? 'Clock In' : 'Clock Out'}</Text>
-        <Text style={styles.rowSubtitle}>Date: {formatDateFromISO(item.timestampISO)}</Text>
-        <Text style={styles.rowSubtitle}>GPS: {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
-      </View>
+        <View style={styles.rowContent}>
+          <View style={styles.rowTitleRow}>
+            <View style={[styles.typeBadge, isClockIn ? styles.typeBadgeIn : styles.typeBadgeOut]}>
+              <Text style={styles.typeBadgeText}>{isClockIn ? 'Clock In' : 'Clock Out'}</Text>
+            </View>
+          </View>
+          <Text style={styles.rowSubtitle}>{formatDateFromISO(item.timestampISO)}</Text>
+          <Text style={styles.rowSubtitle}>
+            {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
+          </Text>
+        </View>
 
-      <Text style={styles.time}>{formatTimeFromISO(item.timestampISO)}</Text>
-    </Pressable>
-  );
+        <Text style={styles.time}>{formatTimeFromISO(item.timestampISO)}</Text>
+      </Pressable>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -104,7 +118,7 @@ export const HistoryScreen = () => {
         }
       />
 
-      <Pressable style={styles.exportButton} onPress={exportToCSV}>
+      <Pressable style={styles.exportButton} onPress={() => void exportToCSV()}>
         <Text style={styles.exportButtonText}>Export CSV</Text>
       </Pressable>
 
@@ -113,17 +127,39 @@ export const HistoryScreen = () => {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScrollContent}>
             <Text style={styles.modalTitle}>Attendance Photo</Text>
 
-            <Image source={{ uri: selectedImageUri }} style={styles.modalImage} resizeMode="cover" />
+            <View style={styles.modalImageWrap}>
+              <Image
+                source={{ uri: selectedImageUri }}
+                style={styles.modalImage}
+                resizeMode="cover"
+                onLoadStart={() => setImageLoading(true)}
+                onLoadEnd={() => setImageLoading(false)}
+              />
+              {imageLoading ? (
+                <View style={styles.imageLoader}>
+                  <ActivityIndicator color="#111111" />
+                </View>
+              ) : null}
+            </View>
 
             {selectedRecord ? (
               <View style={styles.metaCard}>
-                <Text style={styles.metaText}>Type: {selectedRecord.type === 'CLOCK_IN' ? 'Clock In' : 'Clock Out'}</Text>
+                <View style={styles.metaTypeRow}>
+                  <View style={[
+                    styles.typeBadge,
+                    selectedRecord.type === 'CLOCK_IN' ? styles.typeBadgeIn : styles.typeBadgeOut,
+                  ]}>
+                    <Text style={styles.typeBadgeText}>
+                      {selectedRecord.type === 'CLOCK_IN' ? 'Clock In' : 'Clock Out'}
+                    </Text>
+                  </View>
+                </View>
                 <Text style={styles.metaText}>Date: {formatDateFromISO(selectedRecord.timestampISO)}</Text>
                 <Text style={styles.metaText}>Time: {formatTimeFromISO(selectedRecord.timestampISO)}</Text>
                 <Text style={styles.metaText}>
                   GPS: {selectedRecord.latitude.toFixed(6)}, {selectedRecord.longitude.toFixed(6)}
                 </Text>
-                
+
                 <View style={styles.mapContainer}>
                   <MapView
                     style={styles.map}
@@ -154,6 +190,7 @@ export const HistoryScreen = () => {
               onPress={() => {
                 setSelectedRecord(null);
                 setSelectedImageUri('');
+                setImageLoading(false);
               }}
             >
               <Text style={styles.closeButtonText}>Close</Text>
@@ -185,7 +222,6 @@ const styles = StyleSheet.create({
   },
   exportButton: {
     position: 'absolute',
-    // Increased bottom to ensure it stays above the navigation tab bar
     bottom: 30,
     right: 16,
     backgroundColor: '#111111',
@@ -205,7 +241,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
-    // Added extra padding so the last list items aren't hidden by the floating button
     paddingBottom: 100,
   },
   row: {
@@ -222,15 +257,30 @@ const styles = StyleSheet.create({
   rowContent: {
     flex: 1,
     marginHorizontal: 12,
+    gap: 3,
   },
-  rowTitle: {
-    color: '#111111',
+  rowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  typeBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  typeBadgeIn: {
+    backgroundColor: '#E6F4EA',
+  },
+  typeBadgeOut: {
+    backgroundColor: '#FDE8E8',
+  },
+  typeBadgeText: {
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 15,
+    color: '#111111',
   },
   rowSubtitle: {
     color: '#666666',
-    marginTop: 3,
     fontSize: 12,
   },
   time: {
@@ -265,10 +315,21 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 12,
   },
-  modalImage: {
+  modalImageWrap: {
     width: '100%',
     height: 360,
     borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#F5F5F5',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageLoader: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: '#F5F5F5',
   },
   metaCard: {
@@ -276,7 +337,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 14,
     padding: 12,
-    gap: 4,
+    gap: 6,
+  },
+  metaTypeRow: {
+    flexDirection: 'row',
+    marginBottom: 2,
   },
   metaText: {
     color: '#222222',

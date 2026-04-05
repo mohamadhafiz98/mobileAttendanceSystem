@@ -10,7 +10,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AttendanceCameraModal } from '../components/AttendanceCameraModal';
 import { useAttendance } from '../context/AttendanceContext';
 import { AttendanceType } from '../types/attendance';
-import { formatDateLong, formatTime12Hour, formatTimeFromISO } from '../utils/dateTime';
+import {
+  calcHoursBetween,
+  formatDateLong,
+  formatHoursDuration,
+  formatTime12Hour,
+  formatTimeFromISO,
+} from '../utils/dateTime';
 
 type HomeScreenProps = {
   onLogout: () => Promise<void> | void;
@@ -58,6 +64,22 @@ export const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     const entry = todaysRecords.find((record) => record.type === 'CLOCK_OUT');
     return entry ? formatTimeFromISO(entry.timestampISO) : '--:--:--';
   }, [todaysRecords]);
+
+  const hoursWorked = useMemo(() => {
+    const clockInRecord = todaysRecords.find((r) => r.type === 'CLOCK_IN');
+    const clockOutRecord = todaysRecords.find((r) => r.type === 'CLOCK_OUT');
+    if (!clockInRecord || !clockOutRecord) return null;
+    return calcHoursBetween(clockInRecord.timestampISO, clockOutRecord.timestampISO);
+  }, [todaysRecords]);
+
+  const reminderMessage = useMemo(() => {
+    const hour = now.getHours();
+    const hasClockIn = todaysRecords.some((r) => r.type === 'CLOCK_IN');
+    const hasClockOut = todaysRecords.some((r) => r.type === 'CLOCK_OUT');
+    if (!hasClockIn && hour >= 9) return "Don't forget to clock in today!";
+    if (hasClockIn && !hasClockOut && hour >= 17) return "Don't forget to clock out!";
+    return null;
+  }, [now, todaysRecords]);
 
   const requestPermissions = async () => {
     let cameraGranted = false;
@@ -209,6 +231,12 @@ export const HomeScreen = ({ onLogout }: HomeScreenProps) => {
           </Pressable>
         </View>
 
+        {reminderMessage ? (
+          <View style={styles.reminderBanner}>
+            <Text style={styles.reminderText}>⏰ {reminderMessage}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.buttonRow}>
           <Pressable style={styles.primaryButton} onPress={() => handleClockPress('CLOCK_IN')}>
             <Text style={styles.primaryText}>Clock In</Text>
@@ -250,6 +278,17 @@ export const HomeScreen = ({ onLogout }: HomeScreenProps) => {
             <Text style={styles.summaryLabel}>Clock Out</Text>
             <Text style={styles.summaryValue}>{latestClockOut}</Text>
           </View>
+          {hoursWorked !== null ? (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Hours Worked</Text>
+                <Text style={[styles.summaryValue, styles.summaryValueAccent]}>
+                  {formatHoursDuration(hoursWorked)}
+                </Text>
+              </View>
+            </>
+          ) : null}
         </View>
 
         <AttendanceCameraModal
@@ -294,6 +333,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: '#666666',
     fontSize: 14,
+  },
+  reminderBanner: {
+    backgroundColor: '#FFF3CD',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  reminderText: {
+    color: '#7A5C00',
+    fontSize: 13,
+    fontWeight: '500',
   },
   buttonRow: {
     flexDirection: 'row',
@@ -354,6 +404,9 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontSize: 16,
     fontWeight: '600',
+  },
+  summaryValueAccent: {
+    color: '#007AFF',
   },
   divider: {
     borderBottomWidth: StyleSheet.hairlineWidth,

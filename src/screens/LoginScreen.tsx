@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MOCK_AUTH } from '../constants/auth';
@@ -51,6 +52,9 @@ export const LoginScreen = ({ onLoginSuccess }: LoginScreenProps) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <View style={styles.iconWrap}>
+          <MaterialIcons name="person" size={80} color="#111111" />
+        </View>
         <Text style={styles.title}>Attendance Login</Text>
         <Text style={styles.subtitle}>Use your mock credentials to continue.</Text>
 
@@ -118,16 +122,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
+  iconWrap: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   title: {
     fontSize: 28,
     color: '#111111',
     fontWeight: '700',
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
     color: '#666666',
     marginBottom: 24,
+    textAlign: 'center',
   },
   input: {
     height: 52,
@@ -155,9 +165,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
+    backgroundColor: '#111111',
+    borderColor: '#111111',
+  }, 
   checkmark: {
     color: '#FFFFFF',
     fontSize: 12,
@@ -168,7 +178,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   errorText: {
-    color: '#333333',
+    color: '#D32F2F',
     marginTop: 2,
     marginBottom: 12,
     fontSize: 13,
